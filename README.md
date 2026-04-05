@@ -71,34 +71,51 @@ Database:
 
 ## Demo Instructions
 
-### Start AI Service
+### 1. Start AI Service
 
 ```bash
-cd ai_service
+cd "AI service"
 python app.py
 ```
 
-### Start Backend
+---
+
+### 2. Start Backend Server
 
 ```bash
-cd backend
+cd Backend
 npm install
 node server.js
 ```
 
-### Start Frontend
+---
+
+### 3. Start Frontend
 
 ```bash
-cd frontend
+cd Frontend
 npm install
-npm start
+npx parcel index.html
 ```
 
-Access the application at:
+---
+
+### 4. Open Application
+
+Open your browser and go to:
 
 ```
 http://localhost:1234
 ```
+
+---
+
+### Notes
+
+* Ensure all three services (AI service, Backend, Frontend) are running simultaneously
+* If Python or npm commands fail, ensure they are installed and added to PATH
+* The frontend uses Parcel, so no additional setup is required beyond `npm install`
+
 
 ---
 
