@@ -1,0 +1,18 @@
+[
+  {
+    "id": "d1",
+    "lat": 12.9716,
+    "lng": 77.5946,
+    "score": 0.86,
+    "reason": "High reflectance variance + near roadside",
+    "timestamp": "2025-10-25T10:00:00Z"
+  },
+  {
+    "id": "d2",
+    "lat": 12.9750,
+    "lng": 77.5890,
+    "score": 0.72,
+    "reason": "Sudden land-cover change (last month)",
+    "timestamp": "2025-10-20T09:00:00Z"
+  }
+]

@@ -1,0 +1,263 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TerraGuard — Hackathon Demo (HTML)</title>
+    <!-- Load Tailwind CSS for easy styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Leaflet CSS and JS from CDN -->
+    <!-- FIX: Removed integrity and crossorigin attributes to allow loading from local file:/// -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Load Axios for API calls -->
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+    <style>
+        /* Custom styles for layout */
+        .app {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .sidebar {
+            width: 320px;
+            padding: 1rem;
+            border-right: 1px solid #e5e7eb;
+            overflow-y: auto;
+            background-color: #f9fafb;
+        }
+
+        .map-container {
+            flex: 1;
+            min-height: 100%;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        .leaflet-popup-content button {
+            /* Tailwind classes applied here */
+            @apply px-3 py-1 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-700 transition duration-150;
+        }
+    </style>
+</head>
+<body class="m-0">
+    <div id="app" class="app">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">🌍 TerraGuard — FINAL DEMO</h2>
+            <p class="text-sm text-gray-600 mb-4">AI-powered surveillance for environmental protection. Click <b class="font-semibold">Scan Area</b> to query the AI microservice.</p>
+
+            <button id="scan-button" class="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition duration-200 font-medium">
+                Scan Area for Dumps
+            </button>
+
+            <!-- Detections Card -->
+            <div id="detections-card" class="mt-4 p-3 bg-white rounded-lg shadow-sm border border-gray-200">
+                <h3 class="text-lg font-semibold border-b pb-2 mb-2">AI Detections (<span id="detection-count">0</span>)</h3>
+                <div id="detections-list">
+                    <small class="text-gray-500">Move map over Bangalore and click 'Scan Area'.</small>
+                </div>
+            </div>
+
+            <!-- Reports Card -->
+            <div id="reports-card" class="mt-4 p-3 bg-white rounded-lg shadow-sm border border-gray-200">
+                <h3 class="text-lg font-semibold border-b pb-2 mb-2">Citizen Reports (<span id="report-count">0</span>)</h3>
+                <div id="reports-list">
+                    <small class="text-gray-500">No reports yet.</small>
+                </div>
+            </div>
+
+            <small class="block mt-4 text-xs text-gray-500">Tip: Click on map to submit a manual report.</small>
+        </div>
+
+        <!-- Map Container -->
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <script>
+        // NOTE: The L object (Leaflet) is now available globally thanks to the CDN script tag.
+
+        const backendBase = "http://127.0.0.1:4000";
+        const defaultCenter = [12.9721, 77.5933];
+        let map;
+        let detectionMarkers = [];
+        let reportMarkers = [];
+
+        // Custom icons require the global L object
+        const reportIcon = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/190/190411.png',
+            iconSize: [30, 30], iconAnchor: [15, 30], popupAnchor: [0, -30]
+        });
+        const detectionIcon = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/3752/3752386.png',
+            iconSize: [30, 30], iconAnchor: [15, 30], popupAnchor: [0, -30]
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // 1. Initialize Map
+            // The map will now initialize because L is defined.
+            map = L.map('map').setView(defaultCenter, 14);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            // 2. Add Click Listener for Manual Reports
+            map.on('click', function (e) {
+                const lat = e.latlng.lat, lng = e.latlng.lng;
+                if (confirm(`Submit manual report at ${lat.toFixed(5)}, ${lng.toFixed(5)}?`)) {
+                    handleReport(lat, lng, 'Manual Report');
+                }
+            });
+
+            // 3. Attach Event Listeners
+            document.getElementById('scan-button').addEventListener('click', handleScan);
+
+            // 4. Initial Data Load
+            fetchReports();
+        });
+
+        function clearMarkers(markers) {
+            markers.forEach(marker => map.removeLayer(marker));
+            return [];
+        }
+
+        async function fetchReports() {
+            try {
+                const response = await axios.get(`${backendBase}/api/reports`);
+                displayReports(response.data || []);
+            } catch (e) {
+                console.error("Error fetching reports:", e);
+            }
+        }
+
+        async function handleScan() {
+            const bounds = map.getBounds();
+            const params = {
+                lat_min: bounds.getSouth(),
+                lat_max: bounds.getNorth(),
+                lng_min: bounds.getWest(),
+                lng_max: bounds.getEast()
+            };
+
+            document.getElementById('scan-button').textContent = "Scanning...";
+
+            try {
+                const response = await axios.get(`${backendBase}/api/detections`, { params });
+                displayDetections(response.data.detections || []);
+            } catch (e) {
+                const msg = e.response && e.response.data && e.response.data.error ? e.response.data.error : 'Service unreachable. Is AI (5001) or Backend (4000) running?';
+                console.error(`Error during scan: ${msg}`);
+                // NOTE: Using console.error instead of alert due to guidelines, but keeping alert logic for a visible demo prompt
+                alert(`Error during scan: ${msg}`);
+                displayDetections([]);
+            } finally {
+                document.getElementById('scan-button').textContent = "Scan Area for Dumps";
+            }
+        }
+
+        async function handleReport(lat, lng, verdict) {
+            try {
+                const body = { lat, lng, verdict, notes: "Submitted via HTML UI", reporter: "citizen" };
+                await axios.post(`${backendBase}/api/report`, body);
+                alert(`Report saved! Verdict: ${verdict}`);
+                await fetchReports();
+            } catch (e) {
+                const msg = e.response && e.response.data && e.response.data.error ? e.response.data.error : 'Service unreachable. Is Backend (4000) running?';
+                // NOTE: Using console.error instead of alert due to guidelines, but keeping alert logic for a visible demo prompt
+                alert(`Error submitting report: ${msg}`);
+            }
+        }
+
+        function displayDetections(detections) {
+            detectionMarkers = clearMarkers(detectionMarkers);
+            const listDiv = document.getElementById('detections-list');
+            listDiv.innerHTML = '';
+
+            if (detections.length === 0) {
+                listDiv.innerHTML = '<small class="text-gray-500">No detections found in this view.</small>';
+            } else {
+                detections.forEach(d => {
+                    // Marker
+                    const marker = L.marker([d.lat, d.lng], { icon: detectionIcon }).addTo(map);
+                    detectionMarkers.push(marker);
+
+                    // Popup Content
+                    const popupContent = `
+                            <div class="p-1 text-sm font-medium">
+                                <strong>Potential Dump</strong><br/>
+                                Score: <span class="text-red-600">${(d.score * 100).toFixed(0)}%</span><br/>
+                                Reason: <span class="text-gray-500 text-xs">${d.reason}</span><br/>
+                                <div class="mt-2">
+                                    <button onclick="handleReport(${d.lat}, ${d.lng}, 'Confirmed Dump')" class="bg-green-600 hover:bg-green-700">Confirm Site</button>
+                                </div>
+                            </div>
+                        `;
+                    marker.bindPopup(popupContent);
+
+                    // Sidebar Item
+                    const item = document.createElement('div');
+                    item.className = 'py-2 border-b border-gray-100 last:border-b-0';
+                    item.innerHTML = `
+                            <div class="font-medium">ID: ${d.id} - ${(d.score * 100).toFixed(0)}%</div>
+                            <div class="text-xs text-gray-500 truncate">${d.reason}</div>
+                            <div class="mt-1">
+                                <button class="text-xs px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700" onclick="map.setView([${d.lat}, ${d.lng}], 16)">View</button>
+                                <button class="text-xs px-2 py-0.5 ml-2 bg-green-600 hover:bg-green-700" onclick="handleReport(${d.lat}, ${d.lng}, 'Confirmed Dump')">Confirm</button>
+                            </div>
+                        `;
+                    listDiv.appendChild(item);
+                });
+            }
+            document.getElementById('detection-count').textContent = detections.length;
+        }
+
+        function displayReports(reports) {
+            reportMarkers = clearMarkers(reportMarkers);
+            const listDiv = document.getElementById('reports-list');
+            listDiv.innerHTML = '';
+
+            if (reports.length === 0) {
+                listDiv.innerHTML = '<small class="text-gray-500">No user reports yet.</small>';
+            } else {
+                reports.slice().reverse().forEach(r => {
+                    // Marker
+                    const marker = L.marker([r.lat, r.lng], { icon: reportIcon }).addTo(map);
+                    reportMarkers.push(marker);
+
+                    // Popup Content
+                    const popupContent = `
+                            <div class="p-1 text-sm">
+                                <strong>User Report: ${r.verdict}</strong><br/>
+                                Reporter: ${r.reporter}<br/>
+                                Time: ${new Date(r.time).toLocaleString()}<br/>
+                            </div>
+                        `;
+                    marker.bindPopup(popupContent);
+
+                    // Sidebar Item
+                    const item = document.createElement('div');
+                    item.className = 'py-1 border-b border-gray-100 last:border-b-0';
+                    item.innerHTML = `
+                            <div class="font-medium">${r.verdict} by ${r.reporter}</div>
+                            <div class="text-xs text-gray-500">${new Date(r.time).toLocaleTimeString()}</div>
+                            <div class="mt-1">
+                                 <button class="text-xs px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700" onclick="map.setView([${r.lat}, ${r.lng}], 16)">View</button>
+                            </div>
+                        `;
+                    listDiv.appendChild(item);
+                });
+            }
+            document.getElementById('report-count').textContent = reports.length;
+        }
+
+    </script>
+</body>
+</html>
